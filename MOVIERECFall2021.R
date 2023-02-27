@@ -1,0 +1,103 @@
+POPULARITY <- read.csv("popularity.csv",stringsAsFactors = FALSE)
+library(arules)
+TRANS <- read.transactions(
+    file = "moviecarts.csv",  #file name
+    format = "single",  #each row contains one item in the cart
+    header = TRUE,
+    sep = ",",
+    cols=c("transactionID","item"),
+    rm.duplicates = TRUE
+)
+
+POPULARITY <- subset(POPULARITY,title %in% itemLabels(TRANS))
+#Create a vector of what will populate the drop down menu.  Trim down the games the user is allowed to
+#select from to a more manageable number
+valid.choices <- POPULARITY$title[ which(POPULARITY$Freq > 0.1) ] 
+
+
+library(shiny)
+
+# Define UI for application that draws a histogram
+ui <- fluidPage(
+    
+    # Application title
+    titlePanel("Movie Recommendation App"),
+    
+    # Sidebar with a slider input for number of bins 
+    sidebarLayout(
+        sidebarPanel(
+            selectizeInput(inputId="movies",label="Select some movies!",choices=valid.choices,multiple=TRUE),
+            sliderInput(inputId="confidence",label="Minimum confidence of recommendations",
+                        min=0, max=1, value=0),
+            numericInput(inputId="number",label="How many recommendations do you want?",value=20),
+            numericInput(inputId="popularity",label="Maximum popularity of recommendations (Percent 0-25)",value=1),
+            radioButtons(inputId="sorting",label="Sort by:",choices=c("Confidence","Alphabetical")),
+            submitButton("Update Recommendations", icon("fas fa-sync")),
+            
+        ),
+        
+        # Show a plot of the generated distribution
+        mainPanel(
+            tableOutput(outputId="recommendations")
+        )
+    )
+)
+
+# input <- list(games = c("Dota 2","Team Fortress 2","Unturned","Portal 2","Borderlands 2","Robocraft","Grand Theft Auto IV","Alien Swarm",
+#                         "Call of Duty Modern Warfare 3","Tomb Raider","Left 4 Dead","Dead Island Epidemic","Defiance","Besiege",
+#                         "The Stanley Parable","DARK SOULS II","Banished"),
+#               number = 20,
+#               confidence = 0.2,
+#               popularity = 1,
+#               sorting="Alphabetical")
+
+
+# Define server logic required to draw a histogram
+server <- function(input, output, session) {
+    
+    output$recommendations <- renderTable({
+        
+        if( is.null(input$movies) ) { return("Input some movies!") } 
+        
+        too.popular <- POPULARITY$title[ which(POPULARITY$Freq > input$popularity) ]
+        invalid <- setdiff( too.popular , input$movies )  
+        RULES <- apriori(TRANS,parameter = list(supp=5/length(TRANS),conf=input$confidence,minlen=2,maxtime=0),
+                         appearance = list(none=invalid,lhs=input$movies,default="rhs"),
+                         control=list(verbose=FALSE))
+        RULES <- RULES[!is.redundant(RULES)]
+        RULES <- RULES[is.significant(RULES,TRANS)]
+        
+        if( length(RULES) == 0 ) { return("No recommendations for this set of parameters")}
+        
+        RULESDF <- DATAFRAME(RULES, separate = TRUE, setStart = '', itemSep = ' + ', setEnd = '')
+        legit.recommendations <- setdiff( RULESDF$RHS, input$movies ) 
+        RULESDF <- subset(RULESDF, RHS %in% legit.recommendations)
+        
+        if( nrow(RULESDF) == 0 ) { return("No recommendations for this set of parameters")}
+        
+        RECS <- aggregate( confidence ~ RHS, data= RULESDF, FUN =max )
+        RESULTS <- merge(RECS,POPULARITY,by.x="RHS",by.y="title")
+        names(RESULTS) <- c("Movie","Confidence","Popularity")
+        
+        #Get top "number" of recommendations, i.e. those with biggest confidence
+        RESULTS <- RESULTS[order(RESULTS$Confidence,decreasing=TRUE),]
+        RESULTS <- head(RESULTS,input$number)
+        #Very important to convert Game to a text column, otherwise alphabetical sorting is weird
+        RESULTS$Movie <- as.character(RESULTS$Movie)
+        
+        
+        if(input$sorting=="Alphabetical") { 
+            RESULTS <- RESULTS[order(RESULTS$Movie,decreasing=FALSE),]
+        }
+        row.names(RESULTS) <- NULL
+        RESULTS
+        
+        
+        
+    })
+    
+    
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
