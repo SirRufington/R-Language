@@ -1,4 +1,3 @@
-#Alan Tung Case 3
 load("KrogerHouseholdsCarbs.RData")
 HOUSE$Location <- paste(HOUSE$City,HOUSE$StateID)
 
@@ -7,9 +6,6 @@ library(shinyWidgets)
 
 
 ui <- fluidPage(
-    setBackgroundImage(
-        src = "https://cutewallpaper.org/21/final-fantasy-14-backgrounds/Image-Wiki-background-Final-Fantasy-XIV-Guide-Wiki-.jpg"),
-    titlePanel(h1("Kroger Household Analysis",style={'color:orange;'}),),
 
  sidebarLayout(
         sidebarPanel(
